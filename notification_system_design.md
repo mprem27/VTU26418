@@ -88,3 +88,41 @@ CREATE TABLE notifications (
 
 # Stage 3
 
+###Query Analysis
+    Given Query:
+        SELECT * FROM notifications
+        WHERE studentID = 1042
+        AND isRead = false
+        ORDER BY createdAt ASC;
+
+    **Is this query accurate?**
+    Yes. This query fetches all unread notifications of student 1042 and displays them in ascending order based on creation time.
+
+    **Why is it slow?**
+    The database contains around 5,000,000 notifications.Without proper indexes, the database may scan a large number of rows before finding the required records.The ORDER BY clause also requires sorting, which increases execution time.
+
+    **What would you change?**
+    I would create a composite index on studentID, isRead and createdAt.
+    
+    {
+        CREATE INDEX idx_notifications
+        ON notifications(studentID, isRead, createdAt);
+    }
+
+    **What would be the likely computation cost?**
+    Without index:The database may perform a full table scan.
+    With index:The database can directly locate matching records, significantly reducing query execution time.
+    
+    **Should we add indexes on every column?**
+    No.Adding indexes on every column increases storage usage and slows down insert and update operations.Indexes should only be created on frequently searched columns.
+
+    **Write a query to find all students who got a placement notification in the last 7 days.**
+    {
+        SELECT DISTINCT studentID
+        FROM notifications
+        WHERE notificationType = 'Placement'
+        AND createdAt >= NOW() - INTERVAL 7 DAY;
+    }
+
+    
+    
