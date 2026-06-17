@@ -124,5 +124,68 @@ CREATE TABLE notifications (
         AND createdAt >= NOW() - INTERVAL 7 DAY;
     }
 
-    
-    
+# Stage 4
+
+### The Problem
+Currently, notifications are fetched from the database whenever a student loads the page. If thousands of students access the application at the same time (like during placement season), the database will receive too many requests, connection pools will exhaust, and the application will become extremely slow.
+
+### Solution
+I would use a REDIS CACHE to drastically reduce the number of database queries.
+When a notification is requested, the application first checks Redis. If the data is available in Redis, it is returned immediately. If not, it is fetched from MySQL, returned to the user, and simultaneously stored in Redis for future requests.
+
+#### Advantages
+
+1. Faster API response times (milliseconds).
+2. Significantly reduced load on the MySQL database.
+3. Much better user experience.
+
+#### Disadvantages
+
+1. Adds infrastructure complexity .
+2. Cache invalidation is tricky.
+
+### Recommended Approach
+
+1. Redis Cache.
+2. Pagination .
+3. WebSockets.
+This combination perfectly balances database load and real-time user experience.
+
+# Stage 5
+
+### Problems In The Current Implementation
+When looking at this pseudocode, the biggest issue is that it processes notifications one student at a time synchronously. 
+1. It's incredibly slow For 50,000 students, this loop will take hours to finish. 
+2. No fault tolerance if the external email service fails for 200 students midway through the loop, the script will crash. Those students, and everyone after them, will simply miss their notifications.
+3. No retry mechanism If an email fails to send, there is no way to catch the error and try again.
+
+### Should Saving To Database And Sending Emails Happen Together?
+
+"Definitely not". 
+Database operations are fast, reliable, and happen on our own servers. Sending emails relies on external third-party services, which are slow and can easily fail due to network issues or rate limits. If we couple them together, a slow email API will drag down our overall system performance. They must be separated.
+
+### Improved Solution
+To make this reliable for a large campus, I would introduce an asynchronous Message Queue.
+
+Execution flow:
+1. HR clicks "Notify All".
+2. Notifications are saved to the database.
+3. Notifications are pushed to the application through WebSockets.
+4. Email jobs are added to a queue.
+5. Background workers process the queue and send emails.
+6. Failed emails are retried automatically.
+
+Revised Pseudocode
+
+def notify_all(student_ids, message):
+    save_notifications_to_db(student_ids, message)
+    push_to_app(student_ids, message)
+
+    for student_id in student_ids:
+        add_to_email_queue(student_id, message)
+def email_worker(job):
+    try:
+        send_email(job.student_id, job.message)
+    except Exception:
+        # If the external API fails, automatically retry later
+        retry_email(job)
